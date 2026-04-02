@@ -182,5 +182,41 @@ TEST(ModelTypeUtilsTest, GetDefaultJinjaPromptTemplateWithImageAndAudio) {
             "<start_of_turn>model\n");
 }
 
+// ─── Qwen3.5 template token gate ──────────────────────────────────────────
+//
+// GetDefaultJinjaPromptTemplate for kQwen35 must NOT produce a template
+// containing '<start_of_image>' (the Gemma token) and MUST contain
+// '<|vision_start|>' (the Qwen3.5 token). Also confirms no bleed into kQwen3.
+
+TEST(ModelTypeUtilsTest, GetDefaultJinjaPromptTemplateQwen35) {
+  proto::PromptTemplates prompt_templates;
+  prompt_templates.mutable_user()->set_prefix("<|im_start|>user\n");
+  prompt_templates.mutable_user()->set_suffix("<|im_end|>\n");
+  prompt_templates.mutable_model()->set_prefix("<|im_start|>assistant\n");
+  prompt_templates.mutable_model()->set_suffix("<|im_end|>\n");
+  prompt_templates.mutable_system()->set_prefix("<|im_start|>system\n");
+  prompt_templates.mutable_system()->set_suffix("<|im_end|>\n");
+
+  proto::LlmModelType qwen35_type;
+  qwen35_type.mutable_qwen3_5();
+  ASSERT_OK_AND_ASSIGN(
+      auto qwen35_tmpl,
+      GetDefaultJinjaPromptTemplate(prompt_templates, qwen35_type));
+
+  EXPECT_FALSE(absl::StrContains(qwen35_tmpl, "<start_of_image>"))
+      << "kQwen35 template must not contain Gemma '<start_of_image>'";
+  EXPECT_TRUE(absl::StrContains(qwen35_tmpl, "<|vision_start|>"))
+      << "kQwen35 template must contain '<|vision_start|>'";
+
+  // kQwen3 must not bleed Qwen3.5 vision tokens.
+  proto::LlmModelType qwen3_type;
+  qwen3_type.mutable_qwen3();
+  ASSERT_OK_AND_ASSIGN(
+      auto qwen3_tmpl,
+      GetDefaultJinjaPromptTemplate(prompt_templates, qwen3_type));
+  EXPECT_FALSE(absl::StrContains(qwen3_tmpl, "<|vision_start|>"))
+      << "kQwen3 template must not contain Qwen3.5 '<|vision_start|>'";
+}
+
 }  // namespace
 }  // namespace litert::lm

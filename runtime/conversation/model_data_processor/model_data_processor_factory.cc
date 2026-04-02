@@ -36,6 +36,8 @@
 #include "runtime/conversation/model_data_processor/model_data_processor.h"
 #include "runtime/conversation/model_data_processor/qwen3_data_processor.h"
 #include "runtime/conversation/model_data_processor/qwen3_data_processor_config.h"
+#include "runtime/conversation/model_data_processor/qwen35_data_processor.h"
+#include "runtime/conversation/model_data_processor/qwen35_data_processor_config.h"
 #include "runtime/proto/llm_model_type.pb.h"
 #include "runtime/proto/token.pb.h"
 #include "runtime/util/status_macros.h"
@@ -214,12 +216,56 @@ absl::StatusOr<DataProcessorConfig> CreateQwen3DataProcessorConfig(
   return config;
 }
 
+absl::StatusOr<DataProcessorConfig> CreateQwen35DataProcessorConfig(
+    const proto::LlmModelType& model_type) {
+  if (!model_type.has_qwen3_5()) {
+    return absl::InvalidArgumentError(
+        "Qwen35 LlmModelType is required to create Qwen35DataProcessorConfig.");
+  }
+  Qwen35DataProcessorConfig config;
+  const auto& qwen35 = model_type.qwen3_5();
+  if (qwen35.has_start_of_vision_token()) {
+    ASSIGN_OR_RETURN(config.start_of_vision_token,
+                     GetTokenString(qwen35.start_of_vision_token()));
+  }
+  if (qwen35.has_image_pad_token()) {
+    ASSIGN_OR_RETURN(config.image_pad_token,
+                     GetTokenString(qwen35.image_pad_token()));
+  }
+  if (qwen35.has_end_of_vision_token()) {
+    ASSIGN_OR_RETURN(config.end_of_vision_token,
+                     GetTokenString(qwen35.end_of_vision_token()));
+  }
+  const auto& default_qwen35 = proto::Qwen35::default_instance();
+  if (qwen35.image_tensor_height() != default_qwen35.image_tensor_height()) {
+    config.image_tensor_height = qwen35.image_tensor_height();
+  }
+  if (qwen35.image_tensor_width() != default_qwen35.image_tensor_width()) {
+    config.image_tensor_width = qwen35.image_tensor_width();
+  }
+  if (qwen35.has_code_fence_start()) {
+    config.code_fence_start = qwen35.code_fence_start();
+  }
+  if (qwen35.has_code_fence_end()) {
+    config.code_fence_end = qwen35.code_fence_end();
+  }
+  if (qwen35.has_escape_fence_strings()) {
+    config.escape_fence_strings = qwen35.escape_fence_strings();
+  }
+  if (qwen35.has_tool_code_regex()) {
+    config.tool_code_regex = qwen35.tool_code_regex();
+  }
+  return config;
+}
+
 absl::StatusOr<DataProcessorConfig> CreateDataProcessorConfigFromLlmModelType(
     const proto::LlmModelType& model_type) {
   switch (model_type.model_type_case()) {
     case proto::LlmModelType::kGemma3:
     case proto::LlmModelType::kGemma3N:
       return CreateGemma3DataProcessorConfig(model_type);
+    case proto::LlmModelType::kQwen35:
+      return CreateQwen35DataProcessorConfig(model_type);
     case proto::LlmModelType::kQwen3:
     case proto::LlmModelType::kQwen2P5:
       return CreateQwen3DataProcessorConfig(model_type);
@@ -242,6 +288,10 @@ absl::StatusOr<std::unique_ptr<ModelDataProcessor>> CreateModelDataProcessor(
     return Gemma3DataProcessor::Create(
         std::get<Gemma3DataProcessorConfig>(config), preface, tokenizer,
         stop_token_ids, enable_constrained_decoding);
+  } else if (std::holds_alternative<Qwen35DataProcessorConfig>(config)) {
+    ABSL_VLOG(2) << "Creating Qwen35DataProcessor";
+    return Qwen35DataProcessor::Create(
+        std::get<Qwen35DataProcessorConfig>(config), preface);
   } else if (std::holds_alternative<Qwen3DataProcessorConfig>(config)) {
     ABSL_LOG(INFO) << "Creating Qwen3DataProcessor";
     return Qwen3DataProcessor::Create(

@@ -365,6 +365,76 @@ absl::StatusOr<std::string> GetDefaultJinjaPromptTemplate(
 {%- if add_generation_prompt -%}
     {{'<start_of_turn>model\n'}}
 {%- endif -%})tmpl";
+    case proto::LlmModelType::kQwen35:
+      // Qwen3.5 multimodal — uses <|vision_start|><|image_pad|><|vision_end|>
+      // as the image placeholder sequence, NOT <start_of_image> (Gemma token).
+      //
+      // TODO(community): Qwen3.5 instruct models can emit <think>…</think>
+      // blocks before answering (chain-of-thought / "thinking" mode). The
+      // runtime does not yet support context rewinding for these tokens, so
+      // prompts that trigger thinking mode may produce degenerate output.
+      // Tracked upstream at https://github.com/google-ai-edge/LiteRT-LM/issues/1658
+      //
+      // The user/model/system prefixes/suffixes come from bundle metadata
+      // (prompt_templates), typically:
+      //   user prefix:   "<|im_start|>user\n"
+      //   user suffix:   "<|im_end|>\n"
+      //   model prefix:  "<|im_start|>assistant\n"
+      //   model suffix:  "<|im_end|>\n"
+      //   system prefix: "<|im_start|>system\n"
+      //   system suffix: "<|im_end|>\n"
+      return absl::StrCat(
+          absl::Substitute("{%- for message in messages -%}"
+                           "{%- if message.content is string -%}"
+                           "{%- if message.role == 'user' %}"
+                           "$0{{ message.content }}$1"
+                           "{% endif -%}"
+                           "{%- if message.role == 'model' %}"
+                           "$2{{ message.content }}$3"
+                           "{% endif -%}"
+                           "{%- if message.role == 'system' %}"
+                           "$4{{ message.content }}$5"
+                           "{% endif -%}"
+                           "{%- else -%}",
+                           prompt_templates.user().prefix(),
+                           prompt_templates.user().suffix(),
+                           prompt_templates.model().prefix(),
+                           prompt_templates.model().suffix(),
+                           prompt_templates.system().prefix(),
+                           prompt_templates.system().suffix()),
+          absl::Substitute("{%- if message.role == 'user' %}"
+                           "$0"
+                           "{% elif message.role == 'model' %}"
+                           "$1"
+                           "{% elif message.role == 'system' %}"
+                           "$2"
+                           "{% endif -%}"
+                           "{%- for item in message.content %}"
+                           "{%- if item.type == 'text' %}"
+                           "{{ item.text }}"
+                           "{% elif item.type == 'image' -%}"
+                           "{{ '<|vision_start|><|image_pad|><|vision_end|>' }}"
+                           "{%- endif -%}"
+                           "{%- endfor -%}"
+                           "{%- if message.role == 'user' %}"
+                           "$3"
+                           "{% elif message.role == 'model' %}"
+                           "$4"
+                           "{% elif message.role == 'system' %}"
+                           "$5"
+                           "{% endif -%}"
+                           "{%- endif -%}"
+                           "{%- endfor -%}"
+                           "{%- if add_generation_prompt %}"
+                           "$6"
+                           "{% endif -%}",
+                           prompt_templates.user().prefix(),
+                           prompt_templates.model().prefix(),
+                           prompt_templates.system().prefix(),
+                           prompt_templates.user().suffix(),
+                           prompt_templates.model().suffix(),
+                           prompt_templates.system().suffix(),
+                           prompt_templates.model().prefix()));
     case proto::LlmModelType::kQwen3:
     case proto::LlmModelType::kQwen2P5:
     case proto::LlmModelType::kGenericModel:

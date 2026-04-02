@@ -32,6 +32,7 @@
 #include "runtime/conversation/model_data_processor/generic_data_processor_config.h"
 #include "runtime/conversation/model_data_processor/model_data_processor.h"
 #include "runtime/conversation/model_data_processor/qwen3_data_processor_config.h"
+#include "runtime/conversation/model_data_processor/qwen35_data_processor_config.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/proto/llm_model_type.pb.h"
 #include "runtime/util/status_macros.h"  // NOLINT
@@ -158,6 +159,27 @@ TEST_F(ModelDataProcessorFactoryTest, CreateQwen3ModelDataProcessor) {
   EXPECT_THAT(processor->ToInputDataVector("test prompt", {},
                                            Gemma3DataProcessorArguments()),
               StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST_F(ModelDataProcessorFactoryTest, CreateQwen35DataProcessor) {
+  proto::LlmModelType llm_model_type;
+  auto* q35 = llm_model_type.mutable_qwen3_5();
+  q35->mutable_start_of_vision_token()->set_token_str("<|vision_start|>");
+  q35->mutable_image_pad_token()->set_token_str("<|image_pad|>");
+  q35->mutable_end_of_vision_token()->set_token_str("<|vision_end|>");
+  ASSERT_OK_AND_ASSIGN(
+      auto config, CreateDataProcessorConfigFromLlmModelType(llm_model_type));
+  ASSERT_TRUE(std::holds_alternative<Qwen35DataProcessorConfig>(config));
+  ASSERT_OK_AND_ASSIGN(auto processor, CreateModelDataProcessor(config));
+  EXPECT_OK(processor->ToInputDataVector("test prompt", {},
+                                         Qwen35DataProcessorArguments()));
+  EXPECT_THAT(processor->ToInputDataVector("test prompt", {},
+                                           Gemma3DataProcessorArguments()),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+
+  EXPECT_OK(
+      processor->ToMessage(Responses(TaskState::kProcessing, {"test response"}),
+                           Qwen35DataProcessorArguments()));
 }
 
 TEST_F(ModelDataProcessorFactoryTest, CreateFunctionGemmaDataProcessor) {

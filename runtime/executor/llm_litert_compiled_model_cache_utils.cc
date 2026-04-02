@@ -118,6 +118,11 @@ using ::litert::TensorBuffer;
 }
 
 bool IsKVCacheTensor(absl::string_view tensor_name) {
+  // Note: Qwen3.5 hybrid SSM/attention layers export their conv and recurrent
+  // state tensors as named IO tensors with a kv_cache_c_* and kv_cache_r_*
+  // prefix respectively. Both prefixes start with "kv_cache_" and are already
+  // matched by the first clause above, so no additional extension is required
+  // for Qwen3.5 support.
   return absl::StartsWith(tensor_name, "kv_cache_") ||
          absl::StartsWith(tensor_name, "k_cache_") ||
          absl::StartsWith(tensor_name, "v_cache_");
